@@ -4,14 +4,15 @@ package mrnes
 
 import (
 	"fmt"
-	"github.com/iti/evt/evtm"
-	"github.com/iti/evt/vrtime"
-	"github.com/iti/rngstream"
-	"golang.org/x/exp/slices"
 	"math"
 	"path"
 	"sort"
 	"strconv"
+
+	"github.com/iti/evt/evtm"
+	"github.com/iti/evt/vrtime"
+	"github.com/iti/rngstream"
+	"golang.org/x/exp/slices"
 )
 
 // declare global variables that are loaded from
@@ -22,6 +23,7 @@ type opTimeDesc struct {
 }
 
 var devExecTimeTbl map[string]map[string][]opTimeDesc
+
 type OpMethod func(TopoDev, string, *NetworkMsg) float64
 
 // set up an empty method to test against when looking to follow the link to the OpMethod
@@ -214,8 +216,9 @@ func LoadStateParams(base string) error {
 // BuildExperimentNet bundles the functions of LoadTopo, LoadDevExec, and LoadStateParams
 func BuildExperimentNet(evtMgr *evtm.EventManager, dictFiles map[string]string,
 	useYAML bool, idCounter int, traceMgr *TraceManager) error {
-
+	// fmt.Println("Creating BuildExperimentNet")
 	topoFile := dictFiles["topo"]
+	dytopoFile := dictFiles["dytopo"]
 	devExecFile := dictFiles["devExec"]
 	baseFile := dictFiles["exp"]
 
@@ -225,7 +228,8 @@ func BuildExperimentNet(evtMgr *evtm.EventManager, dictFiles map[string]string,
 	// topo interfaces get access to device timings
 	err1 := LoadDevExec(devExecFile)
 	err2 := LoadTopo(topoFile, idCounter, traceMgr)
-	err3 := LoadStateParams(baseFile)
+	err3 := LoadDytopo(dytopoFile, evtMgr, traceMgr)
+	err4 := LoadStateParams(baseFile)
 
 	bckgrndRNG := rngstream.New("bckgrnd")
 	u01List = make([]float64, numU01)
@@ -233,7 +237,7 @@ func BuildExperimentNet(evtMgr *evtm.EventManager, dictFiles map[string]string,
 		u01List[idx] = bckgrndRNG.RandU01()
 	}
 
-	errs := []error{err1, err2, err3}
+	errs := []error{err1, err2, err3, err4}
 
 	StartFlows(evtMgr)
 
@@ -661,15 +665,15 @@ func GetExperimentNetDicts(dictFiles map[string]string) (*TopoCfg, *DevExecList,
 }
 
 func connectDirectedIds(dtg map[int][]int, id1, id2 int) {
-    // shouldn't happen
-    if id1==id2 {
-        return
-    }
-    
-    // create edge from source version of id1 to destination version of id2
-    srcDevID := devIDToDirected[id1].i
-    dstDevID := devIDToDirected[id2].j
-    dtg[srcDevID] = append(dtg[srcDevID], dstDevID)
+	// shouldn't happen
+	if id1 == id2 {
+		return
+	}
+
+	// create edge from source version of id1 to destination version of id2
+	srcDevID := devIDToDirected[id1].i
+	dstDevID := devIDToDirected[id2].j
+	dtg[srcDevID] = append(dtg[srcDevID], dstDevID)
 }
 
 // connectIds remembers the asserted communication linkage between
@@ -693,6 +697,466 @@ func connectIds(tg map[int][]int, id1, id2, intrfc1, intrfc2 int) {
 		tg[id2] = append(tg[id2], id1)
 	}
 	routeStepIntrfcs[intPair{i: id1, j: id2}] = intPair{i: intrfc1, j: intrfc2}
+}
+
+func addRouter(rtr *RouterDesc, tm *TraceManager) {
+	// create a runtime representation from its desc representation
+	rtrDev := createRouterDev(rtr)
+
+	// get name and id
+	rtrName := rtrDev.RouterName
+	rtrID := rtrDev.RouterID
+
+	// add rtrDev to TopoDev map
+
+	// save rtrDev for lookup by Id and Name
+
+	// for TopoDev interface
+	addTopoDevLookup(rtrID, rtrName, rtrDev)
+	RouterDevByID[rtrID] = rtrDev
+	RouterDevByName[rtrName] = rtrDev
+
+	// for paramObj interface
+	paramObjByID[rtrID] = rtrDev
+	paramObjByName[rtrName] = rtrDev
+
+	// store id -> name for trace
+	tm.AddName(rtrID, rtrName, "router")
+
+	for _, intrfc := range rtr.Interfaces {
+
+		// create a runtime representation from its desc representation
+		is := createIntrfcStruct(&intrfc)
+
+		// save is for reference by id or name
+		IntrfcByID[is.Number] = is
+		IntrfcByName[intrfc.Name] = is
+
+		// for paramObj interface
+		paramObjByID[is.Number] = is
+		paramObjByName[intrfc.Name] = is
+
+		// store id -> name for trace
+		tm.AddName(is.Number, intrfc.Name, "interface")
+
+		rtr := RouterDevByName[rtr.Name]
+		rtr.addIntrfc(is)
+	}
+
+	devID := rtrDev.DevID()
+
+	//      indices of directedTopoGraph are ids derived from position in directedNodes slide
+	// var directedTopoGraph map[int][]int
+	//      index of the directed node is its identity.  The 'i' component of the intPair is its devID, j is 0 if the source, 1 if dest
+	// var directedNodes []intPair
+	//      index is devID, i compoment of intPair is directed id of source, j is directed id of destination
+	// var devIDToDirected map[int]intPair
+
+	// create directed nodes
+	srcNode := intPair{i: devID, j: 0}
+	dstNode := intPair{i: devID, j: 1}
+
+	// obtain ids and remember them as mapped to by devID
+	srcNodeID := len(directedNodes)
+	directedNodes = append(directedNodes, srcNode)
+	directedTopoGraph[srcNodeID] = make([]int, 0)
+
+	dstNodeID := len(directedNodes)
+	directedNodes = append(directedNodes, dstNode)
+	directedTopoGraph[dstNodeID] = make([]int, 0)
+	devIDToDirected[devID] = intPair{i: srcNodeID, j: dstNodeID}
+
+	directedIDToDev[srcNodeID] = devID
+	directedIDToDev[dstNodeID] = devID
+
+	// if the device is not an endpoint create an edge from destination node to source node
+	if rtrDev.DevType() != EndptCode {
+		directedTopoGraph[dstNodeID] = append(directedTopoGraph[dstNodeID], srcNodeID)
+	}
+
+	for _, intrfc := range rtrDev.DevIntrfcs() {
+		connected := false
+		if intrfc.Cable != nil && compatibleIntrfcs(intrfc, intrfc.Cable) {
+			peerID := intrfc.Cable.Device.DevID()
+			connectIds(topoGraph, devID, peerID, intrfc.Number, intrfc.Cable.Number)
+			connectDirectedIds(directedTopoGraph, devID, peerID)
+			connected = true
+		}
+
+		if !connected && len(intrfc.Carry) > 0 {
+			for _, cintrfc := range intrfc.Carry {
+				if compatibleIntrfcs(intrfc, cintrfc) {
+					peerID := cintrfc.Device.DevID()
+					connectIds(topoGraph, devID, peerID, intrfc.Number, cintrfc.Number)
+					connectDirectedIds(directedTopoGraph, devID, peerID)
+					connected = true
+				}
+			}
+		}
+
+		if !connected && len(intrfc.Wireless) > 0 {
+			for _, conn := range intrfc.Wireless {
+				peerID := conn.Device.DevID()
+				connectIds(topoGraph, devID, peerID, intrfc.Number, conn.Number)
+				connectDirectedIds(directedTopoGraph, devID, peerID)
+			}
+		}
+	}
+	setGraphChangedFlag()
+}
+
+func addSwitch(swtch *SwitchDesc, tm *TraceManager) {
+	// create a runtime representation from its desc representation
+	switchDev := createSwitchDev(swtch)
+
+	// get name and id
+	switchName := switchDev.SwitchName
+	switchID := switchDev.SwitchID
+
+	// save switchDev for lookup by Id and Name
+
+	// for TopoDev interface
+	addTopoDevLookup(switchID, switchName, switchDev)
+	SwitchDevByID[switchID] = switchDev
+	SwitchDevByName[switchName] = switchDev
+
+	// for paramObj interface
+	paramObjByID[switchID] = switchDev
+	paramObjByName[switchName] = switchDev
+
+	// store id -> name for trace
+	tm.AddName(switchID, switchName, "switch")
+
+	for _, intrfc := range swtch.Interfaces {
+		// create a runtime representation from its desc representation
+		is := createIntrfcStruct(&intrfc)
+
+		// save is for reference by id or name
+		IntrfcByID[is.Number] = is
+		IntrfcByName[intrfc.Name] = is
+
+		// store id -> name for trace
+		tm.AddName(is.Number, intrfc.Name, "interface")
+
+		// for paramObj interface
+		paramObjByID[is.Number] = is
+		paramObjByName[intrfc.Name] = is
+
+		// look up endpting switch, using switch name from desc
+		// representation
+		swtch := SwitchDevByName[swtch.Name]
+		swtch.addIntrfc(is)
+	}
+
+	devID := switchDev.DevID()
+
+	//      indices of directedTopoGraph are ids derived from position in directedNodes slide
+	// var directedTopoGraph map[int][]int
+	//      index of the directed node is its identity.  The 'i' component of the intPair is its devID, j is 0 if the source, 1 if dest
+	// var directedNodes []intPair
+	//      index is devID, i compoment of intPair is directed id of source, j is directed id of destination
+	// var devIDToDirected map[int]intPair
+
+	// create directed nodes
+	srcNode := intPair{i: devID, j: 0}
+	dstNode := intPair{i: devID, j: 1}
+
+	// obtain ids and remember them as mapped to by devID
+	srcNodeID := len(directedNodes)
+	directedNodes = append(directedNodes, srcNode)
+	directedTopoGraph[srcNodeID] = make([]int, 0)
+
+	dstNodeID := len(directedNodes)
+	directedNodes = append(directedNodes, dstNode)
+	directedTopoGraph[dstNodeID] = make([]int, 0)
+	devIDToDirected[devID] = intPair{i: srcNodeID, j: dstNodeID}
+
+	directedIDToDev[srcNodeID] = devID
+	directedIDToDev[dstNodeID] = devID
+
+	// if the device is not an endpoint create an edge from destination node to source node
+	if switchDev.DevType() != EndptCode {
+		directedTopoGraph[dstNodeID] = append(directedTopoGraph[dstNodeID], srcNodeID)
+	}
+
+	for _, intrfc := range switchDev.DevIntrfcs() {
+		connected := false
+		if intrfc.Cable != nil && compatibleIntrfcs(intrfc, intrfc.Cable) {
+			peerID := intrfc.Cable.Device.DevID()
+			connectIds(topoGraph, devID, peerID, intrfc.Number, intrfc.Cable.Number)
+			connectDirectedIds(directedTopoGraph, devID, peerID)
+			connected = true
+		}
+
+		if !connected && len(intrfc.Carry) > 0 {
+			for _, cintrfc := range intrfc.Carry {
+				if compatibleIntrfcs(intrfc, cintrfc) {
+					peerID := cintrfc.Device.DevID()
+					connectIds(topoGraph, devID, peerID, intrfc.Number, cintrfc.Number)
+					connectDirectedIds(directedTopoGraph, devID, peerID)
+					connected = true
+				}
+			}
+		}
+
+		if !connected && len(intrfc.Wireless) > 0 {
+			for _, conn := range intrfc.Wireless {
+				peerID := conn.Device.DevID()
+				connectIds(topoGraph, devID, peerID, intrfc.Number, conn.Number)
+				connectDirectedIds(directedTopoGraph, devID, peerID)
+			}
+		}
+	}
+	setGraphChangedFlag()
+}
+
+func addEndpt(endpt *EndptDesc, tm *TraceManager) {
+	endptDev := createEndptDev(endpt)
+	endptDev.initTaskScheduler() //TODO: Figure out what this will break, are these simulated Endpt cores or physical computer cores
+
+	// get name and id
+	endptName := endptDev.EndptName
+	endptID := endptDev.EndptID
+
+	// for TopoDev interface
+	addTopoDevLookup(endptID, endptName, endptDev)
+	EndptDevByID[endptID] = endptDev
+	EndptDevByName[endptName] = endptDev
+
+	// for paramObj interface
+	paramObjByID[endptID] = endptDev
+	paramObjByName[endptName] = endptDev
+
+	// store id -> name for trace
+	tm.AddName(endptID, endptName, "endpt")
+
+	for _, intrfc := range endpt.Interfaces {
+		// create a runtime representation from its desc representation
+		is := createIntrfcStruct(&intrfc)
+
+		// save is for reference by id or name
+		IntrfcByID[is.Number] = is
+		IntrfcByName[intrfc.Name] = is
+
+		// store id -> name for trace
+		tm.AddName(is.Number, intrfc.Name, "interface")
+
+		// for paramObj interface
+		paramObjByID[is.Number] = is
+		paramObjByName[intrfc.Name] = is
+
+		// look up endpting endpt, use not from endpt's desc representation
+		endpt := EndptDevByName[endpt.Name]
+		endpt.addIntrfc(is)
+	}
+	devID := endptDev.DevID()
+
+	//      indices of directedTopoGraph are ids derived from position in directedNodes slide
+	// var directedTopoGraph map[int][]int
+	//      index of the directed node is its identity.  The 'i' component of the intPair is its devID, j is 0 if the source, 1 if dest
+	// var directedNodes []intPair
+	//      index is devID, i compoment of intPair is directed id of source, j is directed id of destination
+	// var devIDToDirected map[int]intPair
+
+	// create directed nodes
+	srcNode := intPair{i: devID, j: 0}
+	dstNode := intPair{i: devID, j: 1}
+
+	// obtain ids and remember them as mapped to by devID
+	srcNodeID := len(directedNodes)
+	directedNodes = append(directedNodes, srcNode)
+	directedTopoGraph[srcNodeID] = make([]int, 0)
+
+	dstNodeID := len(directedNodes)
+	directedNodes = append(directedNodes, dstNode)
+	directedTopoGraph[dstNodeID] = make([]int, 0)
+	devIDToDirected[devID] = intPair{i: srcNodeID, j: dstNodeID}
+
+	directedIDToDev[srcNodeID] = devID
+	directedIDToDev[dstNodeID] = devID
+
+	// if the device is not an endpoint create an edge from destination node to source node
+	if endptDev.DevType() != EndptCode {
+		directedTopoGraph[dstNodeID] = append(directedTopoGraph[dstNodeID], srcNodeID)
+	}
+
+	for _, intrfc := range endptDev.DevIntrfcs() {
+		connected := false
+		if intrfc.Cable != nil && compatibleIntrfcs(intrfc, intrfc.Cable) {
+			peerID := intrfc.Cable.Device.DevID()
+			connectIds(topoGraph, devID, peerID, intrfc.Number, intrfc.Cable.Number)
+			connectDirectedIds(directedTopoGraph, devID, peerID)
+			connected = true
+		}
+
+		if !connected && len(intrfc.Carry) > 0 {
+			for _, cintrfc := range intrfc.Carry {
+				if compatibleIntrfcs(intrfc, cintrfc) {
+					peerID := cintrfc.Device.DevID()
+					connectIds(topoGraph, devID, peerID, intrfc.Number, cintrfc.Number)
+					connectDirectedIds(directedTopoGraph, devID, peerID)
+					connected = true
+				}
+			}
+		}
+
+		if !connected && len(intrfc.Wireless) > 0 {
+			for _, conn := range intrfc.Wireless {
+				peerID := conn.Device.DevID()
+				connectIds(topoGraph, devID, peerID, intrfc.Number, conn.Number)
+				connectDirectedIds(directedTopoGraph, devID, peerID)
+			}
+		}
+	}
+	setGraphChangedFlag()
+}
+
+func addNetwork(netDesc *NetworkDesc, tm *TraceManager) {
+	// create a runtime representation from its desc representation
+	net := createNetworkStruct(netDesc)
+
+	// save pointer to net accessible by id or name
+	NetworkByID[net.Number] = net
+	NetworkByName[net.Name] = net
+
+	// for paramObj interface
+	paramObjByID[net.Number] = net
+	paramObjByName[net.Name] = net
+
+	// store id -> name for trace
+	tm.AddName(net.Number, net.Name, "network")
+
+	// find the run-time representation of the network
+	// net := NetworkByName[netd.Name]
+
+	// initialize it from the desc description of the network
+	net.initNetworkStruct(netDesc)
+}
+
+func addInterface(intrfc *IntrfcDesc) {
+	// create a runtime representation from its desc representation
+	is := createIntrfcStruct(intrfc)
+
+	// save is for reference by id or name
+	IntrfcByID[is.Number] = is
+	IntrfcByName[intrfc.Name] = is
+
+	// for paramObj interface
+	paramObjByID[is.Number] = is
+	paramObjByName[intrfc.Name] = is
+
+	// store id -> name for trace
+	// tm.AddName(is.Number, intrfc.Name, "interface")
+
+	//TOOD: Add code to add interface to the two device structs internal interface list
+	linkIntrfcStruct(intrfc)
+
+	devID := is.Device.DevID()
+	connected := false
+	if is.Cable != nil && compatibleIntrfcs(is, is.Cable) {
+		peerID := is.Cable.Device.DevID()
+		connectIds(topoGraph, devID, peerID, is.Number, is.Cable.Number)
+		connectDirectedIds(directedTopoGraph, devID, peerID)
+		connected = true
+	}
+
+	if !connected && len(is.Carry) > 0 {
+		for _, cintrfc := range is.Carry {
+			if compatibleIntrfcs(is, cintrfc) {
+				peerID := cintrfc.Device.DevID()
+				connectIds(topoGraph, devID, peerID, is.Number, cintrfc.Number)
+				connectDirectedIds(directedTopoGraph, devID, peerID)
+				connected = true
+			}
+		}
+	}
+
+	if !connected && len(is.Wireless) > 0 {
+		for _, conn := range is.Wireless {
+			peerID := conn.Device.DevID()
+			connectIds(topoGraph, devID, peerID, is.Number, conn.Number)
+			connectDirectedIds(directedTopoGraph, devID, peerID)
+		}
+	}
+	setGraphChangedFlag()
+}
+
+func disconnectIds(tg map[int][]int, id1, id2 int) {
+	// Can't remove interface from empty map
+	if routeStepIntrfcs == nil {
+		return
+	}
+	// Can't remove connection to self
+	if id1 == id2 {
+		return
+	}
+	// remove id2 to id1's list of peers, if present
+	idx := slices.Index(tg[id1], id2)
+	if idx != -1 {
+		tg[id1] = append(tg[id1][:idx], tg[id1][idx+1:]...)
+	}
+	// remove id1 to id2's list of peers, if present
+	idx = slices.Index(tg[id2], id1)
+	if idx != -1 {
+		tg[id2] = append(tg[id2][:idx], tg[id2][idx+1:]...)
+	}
+
+	// Remove linkage between id pair and interface pair
+	delete(routeStepIntrfcs, intPair{i: id1, j: id2}) // TODO: Test if this works
+}
+
+func disconnectDirectedIds(dtg map[int][]int, id1, id2 int) {
+	// shouldn't happen
+	if id1 == id2 {
+		return
+	}
+
+	srcDevID := devIDToDirected[id1].i
+	dstDevID := devIDToDirected[id2].j
+
+	idx := slices.Index(dtg[srcDevID], dstDevID) // dstDevID should only appear once
+	if idx != -1 {
+		dtg[srcDevID] = append(dtg[srcDevID][:idx], dtg[srcDevID][idx+1:]...)
+	}
+
+}
+
+func removeInterface(isName string) {
+	is := IntrfcByName[isName]
+	devID := is.Device.DevID()
+	disconnected := false
+	if is.Cable != nil {
+		peerID := is.Cable.Device.DevID()
+		disconnectIds(topoGraph, devID, peerID)
+		disconnectDirectedIds(directedTopoGraph, devID, peerID)
+		disconnected = true
+	}
+
+	if !disconnected && len(is.Carry) > 0 {
+		for _, cintrfc := range is.Carry {
+			peerID := cintrfc.Device.DevID()
+			disconnectIds(topoGraph, devID, peerID)
+			disconnectDirectedIds(directedTopoGraph, devID, peerID)
+			disconnected = true
+		}
+	}
+
+	if !disconnected && len(is.Wireless) > 0 {
+		for _, conn := range is.Wireless {
+			peerID := conn.Device.DevID()
+			disconnectIds(topoGraph, devID, peerID)
+			disconnectDirectedIds(directedTopoGraph, devID, peerID)
+		}
+	}
+
+	delete(IntrfcByID, is.Number)
+	delete(IntrfcByName, is.Name) //Name should be same of IntrfcDesc
+	delete(paramObjByID, is.Number)
+	delete(paramObjByName, is.Name) //Name should be same of IntrfcDesc
+
+	//TODO Add code to remove interface from the internal interface list of the two connected devices
+
+	setGraphChangedFlag()
 }
 
 // createTopoReferences reads from the input TopoCfg file to create references
@@ -723,10 +1187,10 @@ func createTopoReferences(topoCfg *TopoCfg, tm *TraceManager) {
 	IntrfcByName = make(map[string]*intrfcStruct)
 
 	topoGraph = make(map[int][]int)
-    directedTopoGraph = make(map[int][]int)
-    directedNodes = make([]intPair,0)
-    devIDToDirected = make(map[int]intPair)
-    directedIDToDev = make(map[int]int)
+	directedTopoGraph = make(map[int][]int)
+	directedNodes = make([]intPair, 0)
+	devIDToDirected = make(map[int]intPair)
+	directedIDToDev = make(map[int]int)
 
 	// fetch the router	descriptions
 	for _, rtr := range topoCfg.Routers {
@@ -959,35 +1423,35 @@ func createTopoReferences(topoCfg *TopoCfg, tm *TraceManager) {
 	for _, dev := range TopoDevByID {
 		devID := dev.DevID()
 
-        //      indices of directedTopoGraph are ids derived from position in directedNodes slide
-        // var directedTopoGraph map[int][]int
-        //      index of the directed node is its identity.  The 'i' component of the intPair is its devID, j is 0 if the source, 1 if dest
-        // var directedNodes []intPair
-        //      index is devID, i compoment of intPair is directed id of source, j is directed id of destination
-        // var devIDToDirected map[int]intPair
+		//      indices of directedTopoGraph are ids derived from position in directedNodes slide
+		// var directedTopoGraph map[int][]int
+		//      index of the directed node is its identity.  The 'i' component of the intPair is its devID, j is 0 if the source, 1 if dest
+		// var directedNodes []intPair
+		//      index is devID, i compoment of intPair is directed id of source, j is directed id of destination
+		// var devIDToDirected map[int]intPair
 
-        // create directed nodes
-        srcNode := intPair{i:devID, j:0}
-        dstNode := intPair{i:devID, j:1}
+		// create directed nodes
+		srcNode := intPair{i: devID, j: 0}
+		dstNode := intPair{i: devID, j: 1}
 
-        // obtain ids and remember them as mapped to by devID
-        srcNodeID := len(directedNodes)
-        directedNodes = append(directedNodes, srcNode)
-        directedTopoGraph[srcNodeID] = make([]int,0)
+		// obtain ids and remember them as mapped to by devID
+		srcNodeID := len(directedNodes)
+		directedNodes = append(directedNodes, srcNode)
+		directedTopoGraph[srcNodeID] = make([]int, 0)
 
-        dstNodeID := len(directedNodes)
-        directedNodes = append(directedNodes, dstNode)
-        directedTopoGraph[dstNodeID] = make([]int,0)
-        devIDToDirected[devID] = intPair{i:srcNodeID, j:dstNodeID}
+		dstNodeID := len(directedNodes)
+		directedNodes = append(directedNodes, dstNode)
+		directedTopoGraph[dstNodeID] = make([]int, 0)
+		devIDToDirected[devID] = intPair{i: srcNodeID, j: dstNodeID}
 
-        directedIDToDev[srcNodeID] = devID
-        directedIDToDev[dstNodeID] = devID
+		directedIDToDev[srcNodeID] = devID
+		directedIDToDev[dstNodeID] = devID
 
-        // if the device is not an endpoint create an edge from destination node to source node
-        if dev.DevType() != EndptCode {
-            directedTopoGraph[dstNodeID] = append(directedTopoGraph[dstNodeID], srcNodeID)
-        }
-    }
+		// if the device is not an endpoint create an edge from destination node to source node
+		if dev.DevType() != EndptCode {
+			directedTopoGraph[dstNodeID] = append(directedTopoGraph[dstNodeID], srcNodeID)
+		}
+	}
 
 	// put all the connections recorded in the Cabled and Wireless fields into the topoGraph
 	for _, dev := range TopoDevByID {
@@ -997,7 +1461,7 @@ func createTopoReferences(topoCfg *TopoCfg, tm *TraceManager) {
 			if intrfc.Cable != nil && compatibleIntrfcs(intrfc, intrfc.Cable) {
 				peerID := intrfc.Cable.Device.DevID()
 				connectIds(topoGraph, devID, peerID, intrfc.Number, intrfc.Cable.Number)
-                connectDirectedIds(directedTopoGraph, devID, peerID)
+				connectDirectedIds(directedTopoGraph, devID, peerID)
 				connected = true
 			}
 
@@ -1006,7 +1470,7 @@ func createTopoReferences(topoCfg *TopoCfg, tm *TraceManager) {
 					if compatibleIntrfcs(intrfc, cintrfc) {
 						peerID := cintrfc.Device.DevID()
 						connectIds(topoGraph, devID, peerID, intrfc.Number, cintrfc.Number)
-                        connectDirectedIds(directedTopoGraph, devID, peerID)
+						connectDirectedIds(directedTopoGraph, devID, peerID)
 						connected = true
 					}
 				}
@@ -1016,7 +1480,7 @@ func createTopoReferences(topoCfg *TopoCfg, tm *TraceManager) {
 				for _, conn := range intrfc.Wireless {
 					peerID := conn.Device.DevID()
 					connectIds(topoGraph, devID, peerID, intrfc.Number, conn.Number)
-                    connectDirectedIds(directedTopoGraph, devID, peerID)
+					connectDirectedIds(directedTopoGraph, devID, peerID)
 				}
 			}
 		}
