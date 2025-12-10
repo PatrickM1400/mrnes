@@ -5,10 +5,12 @@ package mrnes
 import (
 	"fmt"
 	"math"
+	"os"
 	"strconv"
 	"strings"
 
 	"gonum.org/v1/gonum/graph"
+	"gonum.org/v1/gonum/graph/encoding/dot"
 	"gonum.org/v1/gonum/graph/path"
 	"gonum.org/v1/gonum/graph/simple"
 )
@@ -107,6 +109,11 @@ func buildconnGraph(edges map[int][]int) graph.Graph {
 	}
 	// set the flag to show we've done it and so don't need to do it again
 	connGraphBuilt = true
+
+	connGraphGV, _ := dot.Marshal(connGraph, "Sat_Graph", "", " ")
+	os.WriteFile("sat_graph.gv", connGraphGV, 0666)
+	// fmt.Println("Built Sat Graph")
+
 	return connGraph
 }
 
@@ -275,12 +282,13 @@ func findRoute(srcID, dstID int) *[]intrfcsToDev {
 		srcIntrfcID, dstIntrfcID := intrfcsBetween(route[idx-1], devID)
 
 		dstIntrfc := IntrfcByID[dstIntrfcID]
-
+		// fmt.Println(dstIntrfc)
 		// if 'cable' is nil we're pointing through a network and
 		// use its id
 		// if dstIntrfc.Cable == nil {
 		//		networkID = dstIntrfc.Faces.Number
 		// }
+		// fmt.Println(dstIntrfc.Faces)
 		networkID := dstIntrfc.Faces.Number
 
 		istp := intrfcsToDev{srcIntrfcID: srcIntrfcID, dstIntrfcID: dstIntrfcID, netID: networkID, devID: devID}

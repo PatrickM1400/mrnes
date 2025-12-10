@@ -9,16 +9,17 @@ package mrnes
 // including the background flows)
 import (
 	"fmt"
-	"github.com/iti/evt/evtm"
-	"github.com/iti/evt/vrtime"
-	"github.com/iti/rngstream"
-	"golang.org/x/exp/slices"
-	"gopkg.in/yaml.v3"
 	"math"
 	_ "os"
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/iti/evt/evtm"
+	"github.com/iti/evt/vrtime"
+	"github.com/iti/rngstream"
+	"golang.org/x/exp/slices"
+	"gopkg.in/yaml.v3"
 )
 
 // The mrnsbit network simulator is built around two strong assumptions that
@@ -158,7 +159,7 @@ func (iqs *intrfcQStruct) addNetworkMsg(evtMgr *evtm.EventManager, nm *NetworkMs
 
 		nxtMsg := iqs.msgQueue[0].nm
 		serviceTime := computeServiceTime(nxtMsg.MsgLen, intrfc.State.Bndwdth)
-		advanced, qDelay := iqs.strmQ.queueingDelay(evtMgr.CurrentSeconds(), nxtMsg.intrfcArr, 
+		advanced, qDelay := iqs.strmQ.queueingDelay(evtMgr.CurrentSeconds(), nxtMsg.intrfcArr,
 			serviceTime, nxtMsg.prevIntrfcID)
 
 		msrArrivals = false
@@ -716,6 +717,7 @@ func createIntrfcStruct(intrfc *IntrfcDesc) *intrfcStruct {
 	}
 
 	is.Wireless = make([]*intrfcStruct, 0)
+	// fmt.Println("Length is ", len(is.Wireless))
 	is.Carry = make([]*intrfcStruct, 0)
 
 	is.State = createIntrfcState(is)
@@ -791,7 +793,7 @@ func (intrfc *intrfcStruct) addTrace(label string, nm *NetworkMsg, t float64) {
 	siStr := si.Serialize()
 	siStr = strings.Replace(siStr, "\n", " ", -1)
 	siStr += "\n"
-	fmt.Println(label, siStr)
+	// fmt.Println(label, siStr)
 }
 
 // matchParam is used to determine whether a run-time parameter description
@@ -869,11 +871,16 @@ func (intrfc *intrfcStruct) paramObjName() string {
 func linkIntrfcStruct(intrfcDesc *IntrfcDesc) {
 	// look up the intrfcStruct corresponding to the interface named in input intrfc
 	is := IntrfcByName[intrfcDesc.Name]
-
+	// fmt.Println(intrfcDesc.Name)
+	// fmt.Println("")
 	// in IntrfcDesc the 'Cable' field is a string, holding the name of the target interface
 	if len(intrfcDesc.Cable) > 0 {
 		_, present := IntrfcByName[intrfcDesc.Cable]
 		if !present {
+			// for key, _ := range IntrfcByName {
+			// 	fmt.Println(key)
+			// }
+			// fmt.Println(intrfcDesc.Cable)
 			panic(fmt.Errorf("intrfc cable connection goof"))
 		}
 		is.Cable = IntrfcByName[intrfcDesc.Cable]
@@ -892,6 +899,8 @@ func linkIntrfcStruct(intrfcDesc *IntrfcDesc) {
 
 	if len(intrfcDesc.Wireless) > 0 {
 		for _, IntrfcName := range intrfcDesc.Wireless {
+			// fmt.Println("Interface Name", IntrfcName)
+			// fmt.Println(IntrfcByName[IntrfcName])
 			is.Wireless = append(is.Wireless, IntrfcByName[IntrfcName])
 		}
 	}
@@ -1510,16 +1519,16 @@ type switchDev struct {
 
 // The switchState struct holds auxiliary information about the switch
 type switchState struct {
-	Rngstrm    *rngstream.RngStream // pointer to a random number generator
-	Trace      bool                 // switch for calling trace saving
-	Drop       bool                 // switch to allow dropping packets
-	Active     map[int]float64
-	Load       float64
-	BufferSize float64
-	Capacity   float64
-	Forward    DFS
-	Packets    int
-	DefaultOp  map[string]string
+	Rngstrm      *rngstream.RngStream // pointer to a random number generator
+	Trace        bool                 // switch for calling trace saving
+	Drop         bool                 // switch to allow dropping packets
+	Active       map[int]float64
+	Load         float64
+	BufferSize   float64
+	Capacity     float64
+	Forward      DFS
+	Packets      int
+	DefaultOp    map[string]string
 	DevExecOpTbl map[string]OpMethod
 }
 
@@ -1579,7 +1588,6 @@ func (swtch *switchDev) AddDevExecOp(op string, opFunc OpMethod) {
 func (swtch *switchDev) SetDefaultOp(src, op string) {
 	swtch.SwitchState.DefaultOp[src] = op
 }
-
 
 // matchParam is used to determine whether a run-time parameter description
 // should be applied to the switch. Its definition here helps switchDev satisfy
@@ -1686,7 +1694,7 @@ func (swtch *switchDev) DevDelay(msg *NetworkMsg) float64 {
 
 			// see if the function is actually the empty one, meaning its not there
 			if opFunc == nil {
-				panic(fmt.Errorf("in switch %s dev op %s lacking user-provided instantiation", 
+				panic(fmt.Errorf("in switch %s dev op %s lacking user-provided instantiation",
 					swtch.SwitchName, metaKey))
 			}
 			return opFunc(swtch, metaKey, msg)
@@ -1700,7 +1708,7 @@ func (swtch *switchDev) DevDelay(msg *NetworkMsg) float64 {
 	if present {
 		opFunc := swtch.SwitchState.DevExecOpTbl[defaultOp]
 		if opFunc == nil {
-			panic(fmt.Errorf("in switch %s dev op %s lacking user-provided instantiation", 
+			panic(fmt.Errorf("in switch %s dev op %s lacking user-provided instantiation",
 				swtch.SwitchName, defaultOp))
 		}
 		return opFunc(swtch, defaultOp, msg)
@@ -1729,14 +1737,14 @@ type routerDev struct {
 
 // The routerState type describes auxiliary information about the router
 type routerState struct {
-	Rngstrm *rngstream.RngStream // pointer to a random number generator
-	Trace   bool                 // switch for calling trace saving
-	Drop    bool                 // switch to allow dropping packets
-	Active  map[int]float64
-	Load    float64
-	Buffer  float64
-	Forward map[int]intrfcIDPair
-	Packets int
+	Rngstrm      *rngstream.RngStream // pointer to a random number generator
+	Trace        bool                 // switch for calling trace saving
+	Drop         bool                 // switch to allow dropping packets
+	Active       map[int]float64
+	Load         float64
+	Buffer       float64
+	Forward      map[int]intrfcIDPair
+	Packets      int
 	DefaultOp    map[string]string
 	DevExecOpTbl map[string]OpMethod
 }
@@ -1960,7 +1968,7 @@ type NetworkMsg struct {
 	MsgLen         int            // length of the entire message, in bytes
 	PcktIdx        int            // index of packet with msg
 	NumPckts       int            // number of packets in the message this is part of
-	MetaData	   map[string]any // carrier of extra stuff
+	MetaData       map[string]any // carrier of extra stuff
 	Msg            any            // message being carried.
 	intrfcArr      float64
 	StrmPckt       bool
@@ -1987,8 +1995,13 @@ func currentIntrfcs(nm *NetworkMsg) (*intrfcStruct, *intrfcStruct, *networkStruc
 	srcIntrfcID := (*nm.Route)[nm.StepIdx].srcIntrfcID
 	dstIntrfcID := (*nm.Route)[nm.StepIdx].dstIntrfcID
 
+	fmt.Println(srcIntrfcID)
+	fmt.Println(dstIntrfcID)
+
 	srcIntrfc := IntrfcByID[srcIntrfcID]
 	dstIntrfc := IntrfcByID[dstIntrfcID]
+
+	fmt.Println(IntrfcByID)
 
 	var ns *networkStruct
 	netID := (*nm.Route)[nm.StepIdx].netID
@@ -2011,6 +2024,9 @@ func transitDelay(nm *NetworkMsg) (float64, *networkStruct) {
 
 	// recover the interfaces themselves and the network between them, if any
 	srcIntrfc, dstIntrfc, net := currentIntrfcs(nm)
+
+	fmt.Println(srcIntrfc)
+	fmt.Println(dstIntrfc)
 
 	if (srcIntrfc.Cable != nil && dstIntrfc.Cable == nil) ||
 		(srcIntrfc.Cable == nil && dstIntrfc.Cable != nil) {
@@ -2122,6 +2138,7 @@ func exitEgressIntrfc(evtMgr *evtm.EventManager, egressIntrfc any, data any) any
 	// remember that we visited
 	intrfc.addTrace("exitEgressIntrfc", nm, currentTime)
 
+	fmt.Println("Calling transit Delay at ", evtMgr.Time)
 	netDelay, net := transitDelay(nm)
 
 	// log the completed departure
@@ -2367,7 +2384,8 @@ func DelayThruDevice(model, op string, msgLen int) float64 {
 	if !present {
 		panic(fmt.Errorf("dev op timing requested for unknown op %v on model %s", op, model))
 	}
-
+	// fmt.Println(op)
+	// fmt.Println(model)
 	tbl, here := devExecTimeTbl[op][model]
 	if !here || len(tbl) == 0 {
 		panic(fmt.Errorf("dev op timing requested for unknown model %s executing op %s", model, op))
@@ -2484,4 +2502,3 @@ func prevDeviceName(msg *NetworkMsg) string {
 	srcIntrfc := IntrfcByID[rtStep.srcIntrfcID]
 	return srcIntrfc.Device.DevName()
 }
-

@@ -62,14 +62,26 @@ func ReadDytopoCfg(dytopoFileName string, useYAML bool, dict []byte) (*DytopoCfg
 }
 
 func handleIntrfcEvent(evtMgr *evtm.EventManager, context any, data any) any {
+	// fmt.Println(data)
 	var dytopoEvent DytopoEventCfg = data.(DytopoEventCfg)
+	fmt.Println("Handle Interface Event Called at ", evtMgr.Time)
+	// if dytopoEvent == nil {
+	// 	fmt.Println("Dytopo event is nil")
+	// }
+	// fmt.Println(dytopoEvent.EventType)
 	if dytopoEvent.EventType == "Add" {
+
 		addInterface(&dytopoEvent.Interfaces1)
 		addInterface(&dytopoEvent.Interfaces2)
+		linkIntrfcStruct(&dytopoEvent.Interfaces1)
+		linkIntrfcStruct(&dytopoEvent.Interfaces2)
+		// fmt.Println("Linked Interface Structures")
 	} else {
+		// fmt.Println(dytopoEvent.Interface.Name)
 		removeInterface(dytopoEvent.Interfaces1.Name)
 		removeInterface(dytopoEvent.Interfaces2.Name)
 	}
+	// fmt.Println("")
 	return nil
 }
 
@@ -79,15 +91,19 @@ func LoadDytopo(dytopoFile string, evtMgr *evtm.EventManager, traceMgr *TraceMan
 	useYAML := (ext == ".yaml") || (ext == ".yml")
 
 	dc, err := ReadDytopoCfg(dytopoFile, useYAML, empty)
-
+	fmt.Println("Starting LoadDytopo")
 	if err != nil {
 		return err
 	}
 
 	for idx := 0; idx < len(dc.Events); idx++ {
-		evtMgr.Schedule(nil, dc.Events[idx], handleIntrfcEvent, vrtime.SecondsToTime(dc.Events[idx].Time-evtMgr.CurrentSeconds()))
+		// fmt.Println(dc.Events[idx])
+		offset := vrtime.SecondsToTime((dc.Events[idx].Time - evtMgr.CurrentSeconds()) / 1000)
+		// fmt.Println(offset)
+		evtMgr.Schedule(nil, dc.Events[idx], handleIntrfcEvent, offset)
 
 	}
+	fmt.Println("Finished loading dynamic events")
 
 	return nil
 }

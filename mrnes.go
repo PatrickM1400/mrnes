@@ -159,6 +159,7 @@ func NullHandler(evtMgr *evtm.EventManager, context any, msg any) any {
 // structures representing the topology.  idCounter starts the enumeration of unique
 // topology object names, and traceMgr is needed to log the names and ids of all the topology objects into the trace dictionary
 func LoadTopo(topoFile string, idCounter int, traceMgr *TraceManager) error {
+	fmt.Println("In LoadTopo")
 	empty := make([]byte, 0)
 	ext := path.Ext(topoFile)
 	useYAML := (ext == ".yaml") || (ext == ".yml")
@@ -166,6 +167,8 @@ func LoadTopo(topoFile string, idCounter int, traceMgr *TraceManager) error {
 	tc, err := ReadTopoCfg(topoFile, useYAML, empty)
 
 	if err != nil {
+		fmt.Println("LoadTopo Return Error")
+		fmt.Println(err)
 		return err
 	}
 	// populate topology data structures that enable reference to the structures just read in
@@ -173,8 +176,11 @@ func LoadTopo(topoFile string, idCounter int, traceMgr *TraceManager) error {
 
 	NumIDs = idCounter
 
+	// fmt.Println(tc.Switches)
+
 	// put traceMgr in global variable for reference
 	devTraceMgr = traceMgr
+	fmt.Println("About to call createTopoReferences")
 	createTopoReferences(tc, traceMgr)
 	return nil
 }
@@ -216,7 +222,7 @@ func LoadStateParams(base string) error {
 // BuildExperimentNet bundles the functions of LoadTopo, LoadDevExec, and LoadStateParams
 func BuildExperimentNet(evtMgr *evtm.EventManager, dictFiles map[string]string,
 	useYAML bool, idCounter int, traceMgr *TraceManager) error {
-	// fmt.Println("Creating BuildExperimentNet")
+	fmt.Println("Creating BuildExperimentNet")
 	topoFile := dictFiles["topo"]
 	dytopoFile := dictFiles["dytopo"]
 	devExecFile := dictFiles["devExec"]
@@ -238,6 +244,7 @@ func BuildExperimentNet(evtMgr *evtm.EventManager, dictFiles map[string]string,
 	}
 
 	errs := []error{err1, err2, err3, err4}
+	// errs := []error{err1, err2, err4}
 
 	StartFlows(evtMgr)
 
@@ -1034,8 +1041,14 @@ func addNetwork(netDesc *NetworkDesc, tm *TraceManager) {
 }
 
 func addInterface(intrfc *IntrfcDesc) {
+	// fmt.Println("In Add Interface")
+	// fmt.Println(intrfc)
+	// fmt.Println(intrfc.Wireless)
 	// create a runtime representation from its desc representation
 	is := createIntrfcStruct(intrfc)
+	// fmt.Println(is)
+	// fmt.Println(is.Number)
+	// fmt.Println(intrfc.Name)
 
 	// save is for reference by id or name
 	IntrfcByID[is.Number] = is
@@ -1049,11 +1062,13 @@ func addInterface(intrfc *IntrfcDesc) {
 	// tm.AddName(is.Number, intrfc.Name, "interface")
 
 	//TOOD: Add code to add interface to the two device structs internal interface list
-	linkIntrfcStruct(intrfc)
+	// linkIntrfcStruct(intrfc)
 
+	// fmt.Println(is.Device)
 	devID := is.Device.DevID()
 	connected := false
 	if is.Cable != nil && compatibleIntrfcs(is, is.Cable) {
+		// fmt.Println("Is Cable")
 		peerID := is.Cable.Device.DevID()
 		connectIds(topoGraph, devID, peerID, is.Number, is.Cable.Number)
 		connectDirectedIds(directedTopoGraph, devID, peerID)
@@ -1063,6 +1078,7 @@ func addInterface(intrfc *IntrfcDesc) {
 	if !connected && len(is.Carry) > 0 {
 		for _, cintrfc := range is.Carry {
 			if compatibleIntrfcs(is, cintrfc) {
+				// fmt.Println("Found Compatible Carry")
 				peerID := cintrfc.Device.DevID()
 				connectIds(topoGraph, devID, peerID, is.Number, cintrfc.Number)
 				connectDirectedIds(directedTopoGraph, devID, peerID)
@@ -1071,14 +1087,19 @@ func addInterface(intrfc *IntrfcDesc) {
 		}
 	}
 
+	// fmt.Println(is.Wireless)
 	if !connected && len(is.Wireless) > 0 {
 		for _, conn := range is.Wireless {
+			// fmt.Println("Found Compatible Wireless")
+			// fmt.Println(conn)
 			peerID := conn.Device.DevID()
+			// fmt.Println("PeerID is ", peerID)
 			connectIds(topoGraph, devID, peerID, is.Number, conn.Number)
 			connectDirectedIds(directedTopoGraph, devID, peerID)
 		}
 	}
 	setGraphChangedFlag()
+	// fmt.Println("Finished Adding Interface")
 }
 
 func disconnectIds(tg map[int][]int, id1, id2 int) {
@@ -1122,7 +1143,15 @@ func disconnectDirectedIds(dtg map[int][]int, id1, id2 int) {
 }
 
 func removeInterface(isName string) {
+	// fmt.Println("In Remove Interface")
+	// for key, _ := range IntrfcByName {
+	// 	fmt.Println(key)
+	// }
+	// fmt.Println("Finished Printing Interface Keys")
+	// fmt.Println(isName)
 	is := IntrfcByName[isName]
+	// fmt.Println(is)
+
 	devID := is.Device.DevID()
 	disconnected := false
 	if is.Cable != nil {
@@ -1192,6 +1221,8 @@ func createTopoReferences(topoCfg *TopoCfg, tm *TraceManager) {
 	devIDToDirected = make(map[int]intPair)
 	directedIDToDev = make(map[int]int)
 
+	fmt.Println("Starting Creating Topo References")
+
 	// fetch the router	descriptions
 	for _, rtr := range topoCfg.Routers {
 		// create a runtime representation from its desc representation
@@ -1220,6 +1251,7 @@ func createTopoReferences(topoCfg *TopoCfg, tm *TraceManager) {
 
 	// fetch the switch descriptions
 	for _, swtch := range topoCfg.Switches {
+		// fmt.Println(swtch.Name)
 		// create a runtime representation from its desc representation
 		switchDev := createSwitchDev(&swtch)
 
@@ -1308,13 +1340,16 @@ func createTopoReferences(topoCfg *TopoCfg, tm *TraceManager) {
 	}
 
 	for _, endptDesc := range topoCfg.Endpts {
+		// fmt.Println(endptDesc.Interfaces)
 		for _, intrfc := range endptDesc.Interfaces {
+
 			// create a runtime representation from its desc representation
 			is := createIntrfcStruct(&intrfc)
 
 			// save is for reference by id or name
 			IntrfcByID[is.Number] = is
 			IntrfcByName[intrfc.Name] = is
+			// fmt.Println(intrfc.Name)
 
 			// store id -> name for trace
 			tm.AddName(is.Number, intrfc.Name, "interface")
@@ -1351,6 +1386,7 @@ func createTopoReferences(topoCfg *TopoCfg, tm *TraceManager) {
 			swtch.addIntrfc(is)
 		}
 	}
+	// fmt.Println("Finished Adding Switches")
 
 	// fetch the flow descriptions
 	for _, flowDesc := range topoCfg.Flows {
@@ -1478,6 +1514,7 @@ func createTopoReferences(topoCfg *TopoCfg, tm *TraceManager) {
 
 			if !connected && len(intrfc.Wireless) > 0 {
 				for _, conn := range intrfc.Wireless {
+					// fmt.Println(conn)
 					peerID := conn.Device.DevID()
 					connectIds(topoGraph, devID, peerID, intrfc.Number, conn.Number)
 					connectDirectedIds(directedTopoGraph, devID, peerID)
@@ -1485,6 +1522,8 @@ func createTopoReferences(topoCfg *TopoCfg, tm *TraceManager) {
 			}
 		}
 	}
+	// fmt.Println(EndptDevByName)
+	fmt.Println("Finished Creating Topo Reference")
 }
 
 func createBgfStruct(fd *FlowDesc) *Flow {

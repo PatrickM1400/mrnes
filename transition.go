@@ -6,10 +6,11 @@ package mrnes
 //
 import (
 	"fmt"
+	"math"
+
 	"github.com/iti/evt/evtm"
 	"github.com/iti/evt/vrtime"
 	"golang.org/x/exp/slices"
-	"math"
 )
 
 // ConnType tags traffic as discrete or flow
@@ -149,6 +150,9 @@ func (np *NetworkPortal) EnterNetwork(evtMgr *evtm.EventManager, srcDev, dstDev 
 	srcID := TopoDevByName[srcDev].DevID()
 	dstID := TopoDevByName[dstDev].DevID()
 	route := findRoute(srcID, dstID)
+	fmt.Println(route)
+	fmt.Println(evtMgr.Time)
+	fmt.Println()
 
 	// make sure we have a route to use
 	if route == nil || len(*route) == 0 {
